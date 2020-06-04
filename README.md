@@ -32,7 +32,8 @@ This implementation uses the GPU for the generation of a dictionary of signals t
       --use-gpu TF, -g TF   use GPU for fitting (0 == false)
 
 # Acknowledgments
-EPG code was made possible by Matthias Weigel
+EPG code was made possible by Matthias Weigel.
+
 This project was supported by the [SNF](http://www.snf.ch/) (grant number 320030_172876)
 
 
