@@ -194,7 +194,7 @@ extern "C" void __global__ cpmg_sliceprof_B1_FF(unsigned int totalParameters, un
 {
     // calculate the cpmg signals for many values of B1 and Fat fractions
     const int index = blockIdx.x*blockDim.x + threadIdx.x;
-    if (index > totalParameters) return;
+    if (index >= totalParameters) return;
     float wT2 = parameters[index*3+0];
     float b1 = parameters[index*3+1];
     float ff = parameters[index*3+2];

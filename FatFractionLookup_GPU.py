@@ -21,6 +21,7 @@
 from __future__ import print_function
 
 import numpy as np
+import os.path
 
 from pycuda.autoinit import context
 import pycuda.gpuarray as ga
@@ -28,7 +29,7 @@ from pycuda.compiler import SourceModule
 
 from FatFractionLookup import calcSliceprof, reduceSliceProf, FatFractionLookup
 
-CUDA_FILE = "epg.cu"
+CUDA_FILE = os.path.join( os.path.dirname(os.path.realpath(__file__)), "epg.cu")
 
 def getCudaFunction(nEchoes, echoSpacing, T1f, T1w, magPrep = False):
     # prepare definitions
@@ -59,7 +60,7 @@ class FatFractionLookup_GPU(FatFractionLookup):
     NT2s = 60 # number of calculated T2 points
     NB1s = 20 # number of calculated B1 points
     MagPreparePulse = False
-    NFF = 100
+    NFF = 101
     
     CudaBlockSize=256 # number of threads
     

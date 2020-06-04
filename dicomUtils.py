@@ -27,12 +27,10 @@ def load3dDicom(path):
     threeDData = None
     info = []
     l = os.listdir(basepath)
-    bar = Bar('Loading Dicom', max=100)
-    maxVal = len(l)
-    lastPercent = 0
-    currentFile = 0
+    bar = Bar('Loading Dicom', max=len(l))
     threeDlist = []
     for f in sorted(l):
+        if os.path.basename(f).startswith('.'): continue
         fname, ext = os.path.splitext(f)
         if ext.lower() in allowed_ext:
             try:
@@ -43,10 +41,7 @@ def load3dDicom(path):
                 info.append(dFile)
             except:
                 pass
-        currentFile += 1
-        if currentFile*100/maxVal > lastPercent:
-            bar.next()
-            lastPercent = currentFile*100/maxVal
+        bar.next()
     bar.finish()
     threeDData = np.stack(threeDlist, axis = 2)
             
@@ -82,10 +77,7 @@ def save3dDicom(volume, info, path, newSeriesNumber = None, newSeriesDescription
         fName = os.path.join(path, "image0001.dcm") # if one wants to save a part of a dataset
         dicom.write_file(fName, dicomFileData)
     else:
-        bar = Bar('Saving Dicom', max=100)
-        maxVal = len(info)
-        lastPercent = 0
-        currentFile = 0
+        bar = Bar('Saving Dicom', max=len(info))
         for sl in range(len(info)):
             dataArray = volume[...,sl]
             dicomFileData = copy.deepcopy(info[sl]) # create a copy of object
@@ -101,9 +93,5 @@ def save3dDicom(volume, info, path, newSeriesNumber = None, newSeriesDescription
             
             fName = os.path.join(path, "image%04d.dcm" % (sl+startImageNumber)) # if one wants to save a part of a dataset
             dicom.write_file(fName, dicomFileData)
-            currentFile += 1
-            if currentFile*100 / maxVal > lastPercent:
-                bar.next()
-                lastPercent = currentFile*100 / maxVal 
+            bar.next()
         bar.finish()
-    

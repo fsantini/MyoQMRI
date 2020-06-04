@@ -76,7 +76,7 @@ class FatFractionLookup:
     NT2s = 60 # number of calculated T2 points
     NB1s = 20 # number of calculated B1 points
     MagPreparePulse = False
-    NFF = 100
+    NFF = 101
     
     def __init__(self, T2Limits, B1Limits, FatT2, NEchoes, EchoSpacing):
         self.fatT2 = FatT2
@@ -201,7 +201,7 @@ class FatFractionLookup:
                     curSignalIndex += 1
                     
         
-        return parameterCombinations, signalsOut
+        return np.array(parameterCombinations), signalsOut
             
         
 
