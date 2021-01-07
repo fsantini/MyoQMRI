@@ -26,8 +26,9 @@ import os.path
 from pycuda.autoinit import context
 import pycuda.gpuarray as ga
 from pycuda.compiler import SourceModule
+import time
 
-from FatFractionLookup import calcSliceprof, reduceSliceProf, FatFractionLookup
+from FatFractionLookup import FatFractionLookup
 
 CUDA_FILE = os.path.join( os.path.dirname(os.path.realpath(__file__)), "epg.cu")
 
@@ -54,7 +55,7 @@ class FatFractionLookup_GPU(FatFractionLookup):
     
     T1w = 1400
     T1f = 365
-    TBW = 1.6
+    TBW = 2.0
 #    NT2s = 200 # number of calculated T2 points
 #    NB1s = 50 # number of calculated B1 points
     NT2s = 60 # number of calculated T2 points
@@ -65,24 +66,12 @@ class FatFractionLookup_GPU(FatFractionLookup):
     CudaBlockSize=256 # number of threads
     
     def __init__(self, T2Limits, B1Limits, FatT2, NEchoes, EchoSpacing):
-        self.fatT2 = FatT2
-        self.NEchoes = NEchoes
-        self.EchoSpacing = EchoSpacing
-        self.fatSignals = None
-        self.waterSignals = None
-        self.sliceProf90 = reduceSliceProf(calcSliceprof(90, 2.0),10)
-        self.sliceProf90 = np.pad(self.sliceProf90, ((0,2),(0,0)), 'constant')
-        self.sliceProf180 = reduceSliceProf(calcSliceprof(180, 2.0),12) # maybe take into account larger slice for refocusing
-        
-        self.sliceProf90[np.isnan(self.sliceProf90)] = 0.0
-        self.sliceProf180[np.isnan(self.sliceProf180)] = 0.0
-        
-        assert self.sliceProf90.shape == self.sliceProf180.shape, "Slice profiles for excitation and refocusing must be same"
-        
-        self.T2Points = np.linspace(T2Limits[0], T2Limits[1], self.NT2s)
-        self.B1Points = np.linspace(B1Limits[0], B1Limits[1], self.NB1s)
+        FatFractionLookup.__init__(self, T2Limits, B1Limits, FatT2, NEchoes, EchoSpacing)
+        self.allSignals = None
+        self.parameterCombinations = None
     
-    def getAllSignals(self):
+    def generateSignals(self):
+        starttime = time.time()
         parameterCombinations = []
         ffVector = np.linspace(0,1,self.NFF)
         for ffInd in range(len(ffVector)):
@@ -115,15 +104,22 @@ class FatFractionLookup_GPU(FatFractionLookup):
         signalsOut = signalsOut_gpu.get()
         
         print("Done")
+        print("Time taken:", time.time() - starttime)
         
         params_gpu.gpudata.free()
         sp90_gpu.gpudata.free()
         sp180_gpu.gpudata.free()
         
-        return parameterCombinations, signalsOut
-        
-    def getSignal(T2, B1, fatFraction):
-        raise NotImplementedError 
+        self.allSignals = signalsOut
+        self.parameterCombinations = parameterCombinations
+        self.signalsReady = True
+    
+    def getAllSignals(self):
+        if not self.signalsReady: self.generateSignals()
+        return self.parameterCombinations, self.allSignals
+    
+    def getSignal(self, T2, B1, fatFraction):
+        return NotImplementedError
 
 if __name__ == '__main__':
     # test

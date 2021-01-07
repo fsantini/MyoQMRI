@@ -1,27 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-    This file is part of MyoQMRI.
+Created on Fri Jul  5 16:24:26 2019
 
-    MyoQMRI is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    Foobar is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with Foobar.  If not, see <https://www.gnu.org/licenses/>.
-    
-    Copyright 2020 Francesco Santini <francesco.santini@unibas.ch>
+@author: francesco
 """
-
 import math
 import numpy as np
 import scipy.ndimage as ndimage
+
+#from dicomUtils.dicom3D import load3dDicom
+
+try:
+    import SimpleITK as sitk # needs the SimpleElastix package!
+except:
+    sitk = None
+        
 
 from padorcut import padorcut
 
@@ -98,7 +92,6 @@ class DatasetTransform:
         
         self.elastixTransform = []
         for transform in state['elastixTransform']:
-            import SimpleITK as sitk
             self.elastixTransform.append(sitk.ParameterMap(transform))
             
     def transform(self, datasetIn, mode2d = False):
@@ -117,7 +110,7 @@ class DatasetTransform:
             dataMovExtended = ndimage.zoom(dataMovRotated, self.zoom)
             dataMovShifted = ndimage.shift(dataMovExtended, self.shift)
         else:
-            print("2D mode")
+            #print("2D mode")
             dataMovExtended = ndimage.zoom(dataMovRotated, (self.zoom[0], self.zoom[1], 1) )
             dataMovShifted = ndimage.shift(dataMovExtended, (self.shift[0], self.shift[1], self.shift[2]/self.zoom[2]))
             dataMovShifted = ndimage.zoom(dataMovShifted, (1, 1, self.zoom[2]), order = 0 )
@@ -126,7 +119,6 @@ class DatasetTransform:
         dataMov2 = padorcut(dataMovShifted, np.array(self.endSize))
         if self.elastixTransform:
             # apply transformix
-            import SimpleITK as sitk
             transformixImageFilter = sitk.TransformixImageFilter()
             transformixImageFilter.SetLogToConsole(False)
             transformixImageFilter.SetLogToFile(False)
@@ -143,6 +135,10 @@ class DatasetTransform:
         if self.swapSlicesFix:
             datasetOut = datasetOut[:,:,::-1]
         return datasetOut
+                
+    def __call__(self, datasetIn, mode2d = False):
+        return self.transform(datasetIn, mode2d)
+
 
 #NSLICES_MOVING = 47
 #
@@ -169,7 +165,6 @@ class TimeSeriesTransform:
         self.transformList = []
         
     def _transformSingle(self, dataset3D, transform):
-        import SimpleITK as sitk
         transformixImageFilter = sitk.TransformixImageFilter()
         transformixImageFilter.SetTransformParameterMap(transform)
         transformixImageFilter.SetMovingImage(sitk.GetImageFromArray(dataset3D))
@@ -201,7 +196,6 @@ class TimeSeriesTransform:
         for transformForSlice in state:
             transformsLocal = []
             for transformDict in transformForSlice:
-                import SimpleITK as sitk
                 transformsLocal.append( sitk.ParameterMap(transformDict) )
             self.transformList.append(transformsLocal)
     
@@ -210,7 +204,6 @@ class TimeSeriesTransform:
     
 
 def calcTimeseriesTransform(data4D):
-    import SimpleITK as sitk
     transformList = TimeSeriesTransform()
     elastixImageFilter = sitk.ElastixImageFilter()
     elastixImageFilter.SetMovingImage(sitk.GetImageFromArray(data4D[:,:,:,0]))
@@ -222,7 +215,17 @@ def calcTimeseriesTransform(data4D):
         
     return transformList
 
+# DataMov must be 3D because we need to rotate it
 def calcTransform(dataFix, dataFixInfo, dataMov, dataMovInfo, doElastix = True):
+        
+    if type(dataFixInfo) != list:
+        dataFixInfo = [dataFixInfo] # make sure that dataFixInfo is a list
+        
+    
+    twoDMode = (len(dataFixInfo) == 1) # this identifies 2d mode: fix data is a single slice
+    assert not twoDMode or not doElastix, "Elastix registration can only be used in 3D mode"    
+    
+    #print("2D Mode", twoDMode)
     
     transform = DatasetTransform()
     
@@ -248,15 +251,16 @@ def calcTransform(dataFix, dataFixInfo, dataMov, dataMovInfo, doElastix = True):
     colFixOrientation = np.array(dataFixInfo[0].ImageOrientationPatient[0:3])
     slcFixOrientation = np.cross(rowFixOrientation, colFixOrientation)
     
-    # get difference between two slices
-    sliceFixDiff = np.array(dataFixInfo[1].ImagePositionPatient) - np.array(dataFixInfo[0].ImagePositionPatient)
-    
-    if np.dot(sliceFixDiff, slcFixOrientation) < 0:
-        transform.swapSlicesFix = True
-        if doElastix:
-            dataFix = dataFix[:,:,::-1] # invert slice orientation
-        dataFixInfo = dataFixInfo[::-1]
-    
+    if not twoDMode:
+        # get difference between two slices
+        sliceFixDiff = np.array(dataFixInfo[1].ImagePositionPatient) - np.array(dataFixInfo[0].ImagePositionPatient)
+        
+        if np.dot(sliceFixDiff, slcFixOrientation) < 0:
+            transform.swapSlicesFix = True
+            if doElastix:
+                dataFix = dataFix[:,:,::-1] # invert slice orientation
+            dataFixInfo = dataFixInfo[::-1]
+        
     # print(np.array(dataMovInfo[0].ImagePositionPatient))
     # print(np.array(dataFixInfo[0].ImagePositionPatient))
     
@@ -280,7 +284,9 @@ def calcTransform(dataFix, dataFixInfo, dataMov, dataMovInfo, doElastix = True):
         sliceResFix = dataFixInfo[0].SpacingBetweenSlices
     except:
         sliceResFix = dataFixInfo[0].SliceThickness
-        
+    
+    if twoDMode: sliceResFix = dataFixInfo[0].SliceThickness # force slice thickness in case of 2d mode
+    
     
     MovResolution = np.hstack([ dataMovInfo[0].PixelSpacing, sliceResMov ])
     FixResolution = np.hstack([ dataFixInfo[0].PixelSpacing, sliceResFix ])
@@ -321,7 +327,6 @@ def calcTransform(dataFix, dataFixInfo, dataMov, dataMovInfo, doElastix = True):
     transform.endSize = fixSz
     
     if doElastix:
-        import SimpleITK as sitk # needs the SimpleElastix package!
         dataMovShifted = ndimage.shift(dataMovExtended, shift)
         
         #dataFix2 = padorcut(dataFix, fixSz + 8)
@@ -343,6 +348,24 @@ def calcTransform(dataFix, dataFixInfo, dataMov, dataMovInfo, doElastix = True):
         elastixImageFilter.Execute()
         
         transform.elastixTransform = elastixImageFilter.GetTransformParameterMap()
-    print("Done")
+        print("Done")
     return transform
     
+class DatasetTransform2D:
+    def __init__(self):
+        self.transformList = []
+    
+    def transform(self, datasetIn):
+        datasetOut = []
+        for datasetTransform in self.transformList:
+            datasetOut.append(datasetTransform(datasetIn, True))
+        return np.concatenate(datasetOut, axis = 2)
+    
+    def __call__(self, datasetIn):
+        return self.transform(datasetIn)
+    
+def calcTransform2DStack(dataFix, dataFixInfo, dataMov, dataMovInfo):
+    transform2D = DatasetTransform2D()
+    for slc in dataFixInfo:
+        transform2D.transformList.append(calcTransform(None, slc, None, dataMovInfo, False))
+    return transform2D
