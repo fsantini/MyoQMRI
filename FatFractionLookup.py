@@ -63,8 +63,9 @@ def calcSliceprof_slr(nomFA, tbw):
     return sliceprof
 
 # binning of the slice profile
-def reduceSliceProf(sliceprof, bins):
-    lastVal = np.argwhere( np.abs(sliceprof > 0.5) ).max()
+def reduceSliceProf(sliceprof, bins, lastVal = None):
+    if not lastVal:
+        lastVal = np.argwhere( np.abs(sliceprof > 0.9) ).max()
     sliceprof = sliceprof[:lastVal]
     
     binsize = np.ceil(len(sliceprof) / bins);
@@ -80,7 +81,7 @@ def reduceSliceProf(sliceprof, bins):
         else:
             sliceprof_out[i] = sliceprof[startIndex:endIndex].mean()
     
-    return sliceprof_out.squeeze()
+    return sliceprof_out.squeeze(), lastVal
         
 
 
@@ -146,13 +147,17 @@ class FatFractionLookup:
         EXC_SAMPLES = 20
         refSamples = round(EXC_SAMPLES * (1+refWidthFactor))
         
-        #self.sliceProf90 = reduceSliceProf(calcSliceprof_slr(excDeg, excBW), EXC_SAMPLES)
-        self.sliceProf90 = reduceSliceProf(calcSliceprof_fft(excDeg, excBW), EXC_SAMPLES)
+        self.sliceProf90, lastVal = reduceSliceProf(calcSliceprof_slr(excDeg, excBW), EXC_SAMPLES)
+        #self.sliceProf90, lastVal = reduceSliceProf(calcSliceprof_fft(excDeg, excBW), EXC_SAMPLES)
         self.sliceProf90 = np.pad(self.sliceProf90, (0,refSamples - EXC_SAMPLES) )
-        #self.sliceProf180 = reduceSliceProf(calcSliceprof_slr(refDeg/2, refBW)*2,refSamples) # SLR transform doesn't work for 180°!
-        self.sliceProf180 = reduceSliceProf(calcSliceprof_fft(180, refBW),refSamples) # SLR transform doesn't work for 180°!
+        self.sliceProf180, _ = reduceSliceProf(calcSliceprof_slr(refDeg/2, refBW)*2,refSamples, lastVal) # SLR transform doesn't work for 180°!
+        #self.sliceProf180, _ = reduceSliceProf(calcSliceprof_fft(180, refBW),refSamples, lastVal) # SLR transform doesn't work for 180°!
+        #sliceProf180_old, _ = reduceSliceProf(calcSliceprof_fft(180, refBW),refSamples) # SLR transform doesn't work for 180°!
         self.sliceProf90[np.isnan(self.sliceProf90)] = 0.0
         self.sliceProf180[np.isnan(self.sliceProf180)] = 0.0
+        #print("90",self.sliceProf90)
+        #print("180 old", sliceProf180_old)
+        #print("180 new", self.sliceProf180)
         #invalidate signals
         self.waterSignals = None
         self.fatSignals = None

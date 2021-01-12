@@ -21,7 +21,7 @@
 
 #ifndef PYCUDA_COMPILE
 
-    #define NECHOES 11
+    #define NECHOES 8
     #define ECHOSPACING 8.5f
     #define T1F 365.0f
     #define T1W 1400.0f
@@ -120,6 +120,12 @@ __device__ void cpmg(float exc_alpha, float ref_alpha, float T1, float T2, thrus
     complexType Omega_preRF[3*Nt2p1];
     complexType Omega_postRF[3*Nt2p1];
     
+    for (auto i=0; i<3*Nt2p1; i++)
+    {
+        Omega_postRF[i] = complexType(0.0f, 0.0f);
+        Omega_preRF[i] = complexType(0.0f, 0.0f);
+    }
+    
     Omega_postRF[IDX2C3(0,0)] = sin(exc_alpha_in);
     Omega_postRF[IDX2C3(1,0)] = sin(exc_alpha_in);
     Omega_postRF[IDX2C3(2,0)] = cos(exc_alpha_in);
@@ -151,17 +157,24 @@ __device__ void cpmg(float exc_alpha, float ref_alpha, float T1, float T2, thrus
     tMatrix1[IDX2C3(2,2)] =         cos(fa[1]);
     
     // first relaxation
+    //printf("Omega_postRF[0,0]: %f\n", Omega_postRF[0].real());
     relax<complexType, Nt2p1>(Omega_postRF, RelaxMatrix);
+    //printf("Omega_postRF[0,0]: %f\n", Omega_postRF[0].real());
     dephase<complexType, Nt2p1>(Omega_postRF);
+    //printf("Omega_postRF[0,0]: %f\n", Omega_postRF[0].real());
     
     // first refocusing RF
     
     rfMult<complexType, Nt2p1>(tMatrix0, Omega_postRF, Omega_preRF);
+    //printf("Omega_preRF[0,0]: %f\n", Omega_preRF[0].real());
     // relaxation/recovery post refocusing
     relax<complexType, Nt2p1>(Omega_preRF, RelaxMatrix);
+    //printf("Omega_preRF[0,0]: %f\n", Omega_preRF[0].real());
     dephase<complexType, Nt2p1>(Omega_preRF);
+    //printf("Omega_preRF[0,0]: %f\n", Omega_preRF[0].real());
     
     outVector[0] = thrust::conj(Omega_preRF[IDX2C3(1,0)]);
+    //printf("outvector[0] %f\n", outVector[0].real());
     
     thrust::copy(thrust::device, Omega_preRF, Omega_preRF+(3*Nt2p1), Omega_postRF); // copy state to other matrix
     
@@ -182,6 +195,7 @@ __device__ void cpmg(float exc_alpha, float ref_alpha, float T1, float T2, thrus
         dephase<complexType, Nt2p1>(Omega_preRF);
         
         outVector[pn] = thrust::conj(Omega_preRF[IDX2C3(1,0)]);
+        //printf("outvector[%d] %f\n", pn, outVector[pn].real());
         thrust::copy(thrust::device, Omega_preRF, Omega_preRF+(3*Nt2p1), Omega_postRF); // copy state to other matrix
         
     }
@@ -228,9 +242,9 @@ extern "C" void __global__ cpmg_sliceprof_B1_FF(unsigned int totalParameters, un
 
 #define T2F 151.0f
 
-#define NFF 100
-#define NT2 60
-#define NB1 20
+#define NFF 1
+#define NT2 6
+#define NB1 2
 
 #define minT2 20.0
 #define maxT2 80.0
@@ -241,7 +255,7 @@ extern "C" void __global__ cpmg_sliceprof_B1_FF(unsigned int totalParameters, un
 #define minFF 0.0
 #define maxFF 1.0
 
-__global__ void createParams(float *params, float *signals, float *spExc, float *spRef)
+__global__ void createParams(float *params, float *spExc, float *spRef)
 {
     spExc[0] = 45;
     spExc[1] = 90;
@@ -259,6 +273,7 @@ __global__ void createParams(float *params, float *signals, float *spExc, float 
         {
             for (int nB1 = 0; nB1 < NB1; nB1++)
             {
+                //printf("paramIndex %d\n", paramIndex);
                 params[paramIndex++] = float(nT2)*(maxT2-minT2)/NT2 + minT2;
                 params[paramIndex++] = float(nB1)*(maxB1-minB1)/NB1 + minB1;
                 params[paramIndex++] = float(nFF)*(maxFF-minFF)/NFF + minFF;
@@ -278,25 +293,31 @@ int main(void)
   float *spExc;
   float *spRef;
   
-  // Allocate Unified Memory – accessible from CPU or GPU
+  // Allocate Unified Memory accessible from CPU or GPU
   cudaMalloc((void**)&params, 3*Nparams*sizeof(float));
-  cudaMalloc((void**)&signals, NECHOES*Nparams*sizeof(float));
   
   cudaMalloc((void**)&spExc, 3*sizeof(float));
   cudaMalloc((void**)&spRef, 3*sizeof(float));
  
   std::cout << "Creating param space" << std::endl << std::flush;
   
-  createParams<<<1,1>>>(params, signals, spExc, spRef);
-
+  createParams<<<1,1>>>(params, spExc, spRef);
+  
   cudaDeviceSynchronize();
+  
+  float *h_params = (float*)malloc(Nparams*3*sizeof(float));
+  cudaMemcpy(h_params, params, Nparams*3*sizeof(float), cudaMemcpyDeviceToHost);
+  
+  std::cout << h_params[0] << ", " << h_params[1] << ", " << h_params[2] << std::endl;
+  
+  cudaMalloc((void**)&signals, NECHOES*Nparams*sizeof(float));
   
   std::cout << "Creating signals" << std::endl << std::flush;
   // Run kernel on 1M elements on the GPU
   int blockSize = 256;
   int nBlocks = ceil( float(Nparams)/blockSize );
-  cpmg_sliceprof_B1_FF<<< nBlocks, blockSize >>>(Nparams,  3, T2F, spExc, spRef, params, signals);
-  //cpmg_sliceprof_B1_FF<<< 1, 1 >>>(Nparams,  3, spExc, spRef, params, signals);
+  //cpmg_sliceprof_B1_FF<<< nBlocks, blockSize >>>(Nparams,  3, T2F, spExc, spRef, params, signals);
+  cpmg_sliceprof_B1_FF<<< 1, 1 >>>(Nparams,  3, T2F, spExc, spRef, params, signals);
 
   // Wait for GPU to finish before accessing on host
   cudaDeviceSynchronize();
@@ -310,7 +331,7 @@ int main(void)
   
   for (int i=0; i<NECHOES; i++)
   {
-      std::cout << h_signals[123*NECHOES + i] << ", ";
+      std::cout << h_signals[0*NECHOES + i] << ", ";
   }
   std::cout << std::endl;
   

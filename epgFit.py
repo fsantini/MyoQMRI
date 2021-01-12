@@ -44,7 +44,7 @@ NTHREADS = None
 DOPLOT=0
 t2Lim = (20,80)
 #t2Lim = (50,600)
-b1Lim = (0.5,1.5)
+b1Lim = (0.5,1.2)
 
 parser = ArgumentParser(description='Fit a multiecho dataset')
 parser.add_argument('path', type=str, help='path to the dataset')
@@ -157,10 +157,12 @@ else:
     
 if fitType == 0:
     parameterCombinations, signals = ffl.getAllSignals()
-    signals = signals ** 2 # weight by magnitude
+    signals = signals **2 # weight by magnitude
+    #print("Signals are Nan", np.any(np.isnan(signals)))
     signorms = linalg.norm(signals, axis=1, keepdims=True)
     signormsRep = np.repeat(signorms, signals.shape[1], axis=1)
     signalsNormalized = signals/signormsRep
+    #print("Signal Norm  are nan", np.any(np.isnan(signalsNormalized)))
 
 signalsFF = None
 parameterCombinationsFF = None
@@ -213,6 +215,7 @@ def findBestMatch(signal):
     
     n = np.dot(signalsNormalized, signal)
     nIndex = np.argmax(n)
+    
     
     if DOPLOT >= 2:
         plotSignals(signal, signals[nIndex, :], parameterCombinations[nIndex,:])
@@ -344,7 +347,7 @@ def fitMultiProcess(slcData):
            return t2b1ff
        localFfl = FatFractionLookup(t2Lim, b1Lim, localfatT2, etl, echoSpacing)
        localPars, localSigs = localFfl.getAllSignals()
-       localSigs = localSigs ** 2 # weight by magnitude
+       localSigs = localSigs **2 # weight by magnitude
        findBestMatchLocal = getFindBestMatchLocal(localPars, localSigs)
        
     fitSlcMultiprocess(slcData, False, t2b1ff, findBestMatchLocal)
@@ -510,6 +513,7 @@ def fitSlcGPU(slc, srcFatT2, t2, b1, ff):
 def plotSignals(realSignal, simSignal, t2b1ff):
     plt.figure("SigPlot")
     plt.clf()
+    print(realSignal, simSignal)
     plt.plot(realSignal)
     plt.plot(realSignal[0]*simSignal/simSignal[0], 'rd')
     plt.title("t2: {:.1f}, b1: {:.1f}, ff: {:.1f}".format(t2b1ff[0], t2b1ff[1], t2b1ff[2]))
@@ -617,7 +621,7 @@ else:
             fatT2 = fitSlc(int((sliceRange[1]-sliceRange[0])/2+sliceRange[0]), True, t2, b1, ff)
             ffl = FatFractionLookup(t2Lim, b1Lim, fatT2, etl, echoSpacing)
             parameterCombinations, signals = ffl.getAllSignals()
-            signals = signals ** 2 # weight by magnitude
+            signals = signals **2 # weight by magnitude
             signorms = linalg.norm(signals, axis=1, keepdims=True)
             signormsRep = np.repeat(signorms, signals.shape[1], axis=1)
             signalsNormalized = signals/signormsRep
