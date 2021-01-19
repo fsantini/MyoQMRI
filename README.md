@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/219958690.svg)](https://zenodo.org/badge/latestdoi/219958690)
+
 # MyoQMRI
 This project is an open-source effort to put together tools for quantitative MRI of the muscles.
 
