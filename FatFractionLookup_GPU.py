@@ -65,8 +65,8 @@ class FatFractionLookup_GPU(FatFractionLookup):
     
     CudaBlockSize=256 # number of threads
     
-    def __init__(self, T2Limits, B1Limits, FatT2, NEchoes, EchoSpacing):
-        FatFractionLookup.__init__(self, T2Limits, B1Limits, FatT2, NEchoes, EchoSpacing)
+    def __init__(self, T2Limits, B1Limits, FatT2, NEchoes, EchoSpacing, refWidthFactor = 0.2):
+        FatFractionLookup.__init__(self, T2Limits, B1Limits, FatT2, NEchoes, EchoSpacing, refWidthFactor)
         self.allSignals = None
         self.parameterCombinations = None
     

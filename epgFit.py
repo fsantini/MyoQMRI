@@ -45,6 +45,7 @@ DOPLOT=0
 t2Lim = (20,80)
 #t2Lim = (50,600)
 b1Lim = (0.5,1.2)
+refocusingFactor = 1.2
 
 parser = ArgumentParser(description='Fit a multiecho dataset')
 parser.add_argument('path', type=str, help='path to the dataset')
@@ -61,6 +62,10 @@ parser.add_argument('--register-ff', '-r', dest='regFF', action='store_true', he
 parser.add_argument('--etl-limit', '-e', metavar='N', dest='etlLimit', type=int, help='reduce the echo train length', default=0)
 parser.add_argument('--out-suffix', '-s', metavar='ext', dest='outSuffix', type=str, help='add a suffix to the output map directories', default='')
 parser.add_argument('--slice-range', '-l', metavar=('start', 'end'), dest='sliceRange', type=int, nargs=2, help='Restrict the fitting to a subset of slices', default=(None, None))
+parser.add_argument('--refocusing-width', '-w', metavar='factor', dest='refocusingFactor', type=float, help='Slice width of the refocusing pulse with respect to the excitation (default {refocusingFactor} (Siemens standard)', default=refocusingFactor)
+parser.add_argument('--exc-profile', metavar='path', dest='excProfilePath', type=str, help='Path to the excitation slice profile file', default=None)
+parser.add_argument('--ref-profile', metavar='path', dest='refProfilePath', type=str, help='Path to the refocusing slice profile file', default=None)
+
 
 
 args = parser.parse_args()
@@ -80,6 +85,9 @@ regFF = args.regFF
 outSuffix = args.outSuffix
 fitType = args.fitType
 sliceRange = args.sliceRange
+refocusingFactor = args.refocusingFactor
+excProfilePath = args.excProfilePath
+refProfilePath = args.refProfilePath
 
 print("Base dir:", baseDir)
 print("NOISELEVEL:", NOISELEVEL)
@@ -95,10 +103,28 @@ print("Reg FF", regFF)
 print("ETL limit", etlLimit)
 print("Output suffix", outSuffix)
 print("Slice Range", sliceRange)
+print("Refocusing Factor", refocusingFactor)
+print("Excitation slice profile", excProfilePath)
+print("Refocusing slice profile", refProfilePath)
+
+refocusingFactor -= 1.0 # the actual parameter passed must be 0.2
 
 assert useGPU or ffMapDir == '' or NTHREADS == 1, "FF map can only be used with a single thread"
 assert NTHREADS == 1 or fitType == 0, "Only EPG fitting can be used with multiple threads"
 assert not useGPU or fitType == 0, "Only EPG fitting is supported on the GPU"
+assert (excProfilePath is None and excProfilePath is None) or (excProfilePath is not None and excProfilePath is not None), "Either both slice profiles are specified, or neither is"
+
+excProfile = None
+refProfile = None
+
+if excProfilePath:
+    excProfile = np.loadtxt(excProfilePath)
+
+if refProfilePath:
+    refProfile = np.loadtxt(refProfilePath)
+    
+assert excProfile.shape == refProfile.shape and excProfile.ndim == 1, "Slice profiles must be one-dimensional vectors and contain the same number of samples"
+
 
 ###########################################################
 ## Initialization
@@ -151,9 +177,11 @@ plt.ion()
 ffl = None
 
 if fatT2 <= 0:
-    ffl = FatFractionLookup(t2Lim, b1Lim, INITIAL_FATT2, etl, echoSpacing)
+    ffl = FatFractionLookup(t2Lim, b1Lim, INITIAL_FATT2, etl, echoSpacing, refocusingFactor)
+    if excProfile is not None: ffl.setPulsesExt(excProfile, refProfile, refocusingFactor)
 else:
-    ffl = FatFractionLookup(t2Lim, b1Lim, fatT2, etl, echoSpacing)
+    ffl = FatFractionLookup(t2Lim, b1Lim, fatT2, etl, echoSpacing, refocusingFactor)
+    if excProfile is not None: ffl.setPulsesExt(excProfile, refProfile, refocusingFactor)
     
 if fitType == 0:
     parameterCombinations, signals = ffl.getAllSignals()
@@ -345,7 +373,8 @@ def fitMultiProcess(slcData):
        localfatT2 = fitSlcMultiprocess(slcData, True, t2b1ff, findBestMatchLocal)
        if localfatT2 is None:
            return t2b1ff
-       localFfl = FatFractionLookup(t2Lim, b1Lim, localfatT2, etl, echoSpacing)
+       localFfl = FatFractionLookup(t2Lim, b1Lim, localfatT2, etl, echoSpacing, refocusingFactor)
+       if excProfile is not None: ffl.setPulsesExt(excProfile, refProfile, refocusingFactor)
        localPars, localSigs = localFfl.getAllSignals()
        localSigs = localSigs **2 # weight by magnitude
        findBestMatchLocal = getFindBestMatchLocal(localPars, localSigs)
@@ -619,7 +648,8 @@ else:
         if fatT2 <= 0:            
             print("Searching fat...")
             fatT2 = fitSlc(int((sliceRange[1]-sliceRange[0])/2+sliceRange[0]), True, t2, b1, ff)
-            ffl = FatFractionLookup(t2Lim, b1Lim, fatT2, etl, echoSpacing)
+            ffl = FatFractionLookup(t2Lim, b1Lim, fatT2, etl, echoSpacing, refocusingFactor)
+            if excProfile is not None: ffl.setPulsesExt(excProfile, refProfile, refocusingFactor)
             parameterCombinations, signals = ffl.getAllSignals()
             signals = signals **2 # weight by magnitude
             signorms = linalg.norm(signals, axis=1, keepdims=True)

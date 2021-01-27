@@ -33,6 +33,7 @@ from SlrTransform import slr
 from scipy.signal import freqz
 
 DATADIR = 'data'
+EXC_SAMPLES = 20
 
 def calcSliceprof_fft(nomFA, tbw): 
     t = np.linspace(-tbw/2, tbw/2, 100)
@@ -97,7 +98,7 @@ class FatFractionLookup:
     MagPreparePulse = False
     NFF = 101
     
-    def __init__(self, T2Limits, B1Limits, FatT2, NEchoes, EchoSpacing):
+    def __init__(self, T2Limits, B1Limits, FatT2, NEchoes, EchoSpacing, refWidthFactor = 0.2):
         self.fatT2 = FatT2
         self.NEchoes = NEchoes
         self.EchoSpacing = EchoSpacing
@@ -105,7 +106,7 @@ class FatFractionLookup:
         self.B1Limits = B1Limits
 
         self.rfParameters = None
-        self.setPulses() # use default values for setpulses
+        self.setPulses(refWidthFactor=refWidthFactor) # use default values for setpulses
         
         self.T2Points = np.linspace(T2Limits[0], T2Limits[1], self.NT2s)
         self.B1Points = np.linspace(B1Limits[0], B1Limits[1], self.NB1s)
@@ -144,7 +145,6 @@ class FatFractionLookup:
     def setPulses(self, excDeg = 90, excBW = TBW, refDeg = 180, refBW = TBW, refWidthFactor = 0.2):
         self.rfParameters = [excDeg, excBW, refDeg, refBW, refWidthFactor]
         
-        EXC_SAMPLES = 20
         refSamples = round(EXC_SAMPLES * (1+refWidthFactor))
         
         self.sliceProf90, lastVal = reduceSliceProf(calcSliceprof_slr(excDeg, excBW), EXC_SAMPLES)
@@ -159,6 +159,18 @@ class FatFractionLookup:
         #print("180 old", sliceProf180_old)
         #print("180 new", self.sliceProf180)
         #invalidate signals
+        self.waterSignals = None
+        self.fatSignals = None
+        self.signalsReady = False
+        
+    def setPulsesExt(self, excVector, refVector, refWidthFactor = 0.2):
+        self.rfParamenters = [0, 0, 0, 0, refWidthFactor]
+        refSamples = round(EXC_SAMPLES * (1+refWidthFactor))
+        self.sliceProf90, lastVal = reduceSliceProf(excVector, EXC_SAMPLES)
+        self.sliceProf90 = np.pad(self.sliceProf90, (0,refSamples - EXC_SAMPLES) )
+        self.sliceProf180, _ = reduceSliceProf(refVector, refSamples, lastVal) # SLR transform doesn't work for 180°!
+        self.sliceProf90[np.isnan(self.sliceProf90)] = 0.0
+        self.sliceProf180[np.isnan(self.sliceProf180)] = 0.0
         self.waterSignals = None
         self.fatSignals = None
         self.signalsReady = False
