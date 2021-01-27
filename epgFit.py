@@ -62,7 +62,7 @@ parser.add_argument('--register-ff', '-r', dest='regFF', action='store_true', he
 parser.add_argument('--etl-limit', '-e', metavar='N', dest='etlLimit', type=int, help='reduce the echo train length', default=0)
 parser.add_argument('--out-suffix', '-s', metavar='ext', dest='outSuffix', type=str, help='add a suffix to the output map directories', default='')
 parser.add_argument('--slice-range', '-l', metavar=('start', 'end'), dest='sliceRange', type=int, nargs=2, help='Restrict the fitting to a subset of slices', default=(None, None))
-parser.add_argument('--refocusing-width', '-w', metavar='factor', dest='refocusingFactor', type=float, help='Slice width of the refocusing pulse with respect to the excitation (default {refocusingFactor} (Siemens standard)', default=refocusingFactor)
+parser.add_argument('--refocusing-width', '-w', metavar='factor', dest='refocusingFactor', type=float, help=f'Slice width of the refocusing pulse with respect to the excitation (default {refocusingFactor}) (Siemens standard)', default=refocusingFactor)
 parser.add_argument('--exc-profile', metavar='path', dest='excProfilePath', type=str, help='Path to the excitation slice profile file', default=None)
 parser.add_argument('--ref-profile', metavar='path', dest='refProfilePath', type=str, help='Path to the refocusing slice profile file', default=None)
 

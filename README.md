@@ -41,7 +41,7 @@ signals through [Extended Phase Graph simulation](https://doi.org/10.1002/jmri.2
       --slice-range start end, -l start end
                             Restrict the fitting to a subset of slices
       --refocusing-width factor, -w factor
-                            Slice width of the refocusing pulse with respect to the excitation (default {refocusingFactor} (Siemens standard)
+                            Slice width of the refocusing pulse with respect to the excitation (default 1.2) (Siemens standard)
       --exc-profile path    Path to the excitation slice profile file
       --ref-profile path    Path to the refocusing slice profile file
 
