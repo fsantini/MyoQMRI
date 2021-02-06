@@ -123,7 +123,8 @@ if excProfilePath:
 if refProfilePath:
     refProfile = np.loadtxt(refProfilePath)
     
-assert excProfile.shape == refProfile.shape and excProfile.ndim == 1, "Slice profiles must be one-dimensional vectors and contain the same number of samples"
+if excProfile is not None:
+    assert excProfile.shape == refProfile.shape and excProfile.ndim == 1, "Slice profiles must be one-dimensional vectors and contain the same number of samples"
 
 
 ###########################################################
