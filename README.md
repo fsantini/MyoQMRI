@@ -1,7 +1,13 @@
 [![DOI](https://zenodo.org/badge/219958690.svg)](https://zenodo.org/badge/latestdoi/219958690)
 
 # MyoQMRI
-This project is an open-source effort to put together tools for quantitative MRI of the muscles.
+This project is an open-source effort to put together tools for quantitative MRI of the muscles. Currently, it supports fast water T2 mapping from multi echo spin echo images.
+
+## Citing
+
+If you find this work useful, please cite the following paper:
+
+Santini F, Deligianni X, Paoletti M, et al., *Fast open-source toolkit for water T2 mapping in the presence of fat from multi-echo spin-echo acquisitions for muscle MRI*, Frontiers in Neurology 2021, https://doi.org/10.3389/fneur.2021.630387.
 
 ## Multi-Echo Spin Echo
 
