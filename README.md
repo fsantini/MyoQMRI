@@ -1,4 +1,4 @@
-[![DOI](https://zenodo.org/badge/219958690.svg)](https://zenodo.org/badge/latestdoi/219958690)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4279445.svg)](https://doi.org/10.5281/zenodo.4279445)
 
 # MyoQMRI
 This project is an open-source effort to put together tools for quantitative MRI of the muscles. Currently, it supports fast water T2 mapping from multi echo spin echo images.
