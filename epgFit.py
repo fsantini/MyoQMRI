@@ -22,10 +22,14 @@
 
 from __future__ import print_function
 
+import sys
+
+import muscle_bids.utils.image
 from dicomUtils import load3dDicom, save3dDicom
+from muscle_bids.utils.io import load_bids, save_bids
+from muscle_bids.converters import MeSeConverter, T2Converter, FFConverter, B1Converter
 
 import numpy as np
-import numpy.matlib as matlib
 import numpy.linalg as linalg
 import matplotlib.pyplot as plt
 import os
@@ -48,7 +52,8 @@ b1Lim = (0.5,1.2)
 refocusingFactor = 1.2
 
 parser = ArgumentParser(description='Fit a multiecho dataset')
-parser.add_argument('path', type=str, help='path to the dataset')
+parser.add_argument('path', type=str, help='path to the dataset or to bids subject directory')
+parser.add_argument('--bids', '-b', dest='useBIDS',action='store_true', help='use muscle-BIDS format for input/output')
 parser.add_argument('--fit-type', '-y', metavar='T', dest='fitType', type=int, help='type of fitting: T=0: EPG, T=1: Single exponential, T=2: Double exponential (default: 0)', default=0)
 parser.add_argument('--fat-t2', '-f', metavar='T2', dest='fatT2', type=float, help=f'fat T2 (default: {fatT2:.0f})', default = fatT2)
 parser.add_argument('--noise-level', '-n', dest='noiselevel', metavar='N', type=int, help=f'noise level for thresholding (default: {NOISELEVEL})', default = NOISELEVEL)
@@ -88,6 +93,7 @@ sliceRange = args.sliceRange
 refocusingFactor = args.refocusingFactor
 excProfilePath = args.excProfilePath
 refProfilePath = args.refProfilePath
+useBIDS = args.useBIDS
 
 print("Base dir:", baseDir)
 print("NOISELEVEL:", NOISELEVEL)
@@ -143,35 +149,63 @@ if useGPU:
     NTHREADS = 1
 else:
     from FatFractionLookup import FatFractionLookup
-    
-[dicomStack, infos] = load3dDicom(baseDir)
 
-etl = int(infos[0].EchoTrainLength)
-echoSpacing = float(infos[0].EchoTime)
 
-oldShape = dicomStack.shape
-newShape = (oldShape[0], oldShape[1], etl, int(oldShape[2]/etl))
+if useBIDS:
+    meseFileNames = MeSeConverter.find(baseDir)
+    if not meseFileNames:
+        print('No compatible BIDS datasets found')
+        sys.exit(-1)
+    meseFileName = meseFileNames[0] # note: only taking the first dataset
+    med_volume = load_bids(meseFileName)
+    dicomStack = med_volume.volume
+    infos = None
+    etl = dicomStack.shape[3]
+    echoSpacing = med_volume.bids_header['EchoTime'][0]
 
-print(newShape)
+    if excProfile is None: # see if slice profiles are stored in BIDS
+        try:
+            excProfile = np.array(med_volume.bids_header['ExcitationProfile'])
+        except KeyError:
+            pass
 
-nSlices = newShape[3] 
+        try:
+            refProfile = np.array(med_volume.bids_header['RefocusingProfile'])
+        except KeyError:
+            pass
 
-if not any(sliceRange): sliceRange = (0, nSlices)
+    if excProfile is not None:
+        assert excProfile.shape == refProfile.shape and excProfile.ndim == 1, "Slice profiles must be one-dimensional vectors and contain the same number of samples"
 
-assert sliceRange[0] >= 0 and sliceRange[1] <= nSlices, "Selected slice range is out of bound"
+else: # load DICOM
+    [dicomStack, infos] = load3dDicom(baseDir)
 
-dicomStack = dicomStack.reshape(newShape).swapaxes(2,3) # reorder as slice, etl instead of etl, slices
+    etl = int(infos[0].EchoTrainLength)
+    echoSpacing = float(infos[0].EchoTime)
+
+    oldShape = dicomStack.shape
+    newShape = (oldShape[0], oldShape[1], etl, int(oldShape[2]/etl))
+
+    print(newShape)
+
+    nSlices = newShape[3]
+
+    if not any(sliceRange): sliceRange = (0, nSlices)
+
+    assert sliceRange[0] >= 0 and sliceRange[1] <= nSlices, "Selected slice range is out of bound"
+
+    dicomStack = dicomStack.reshape(newShape).swapaxes(2,3) # reorder as slice, etl instead of etl, slices
+
+    infoOut = infos[:nSlices]
 
 if etlLimit > 0 and etlLimit < etl:
-    dicomStack = dicomStack[:,:,:,:etlLimit]
+    dicomStack = dicomStack[:, :, :, :etlLimit]
     etl = etlLimit
 
 print("Echo Train Length:", etl)
 print("Echo spacing:", echoSpacing)
 
 newShape = dicomStack.shape
-
-infoOut = infos[:nSlices]
 
 plt.ion()
 
@@ -335,7 +369,7 @@ def getFindBestMatchLocal(pComb, dictionary):
     dictionaryLocal = np.copy(dictionary)
     def findBestMatchLocal(signal):
         signal /= signal[0]
-        signalMatrix = matlib.repmat(signal**2, len(pComb),1)
+        signalMatrix = np.repeat(signal**2, [len(pComb),1])
         n = np.sum( (signalMatrix - dictionaryLocal) ** 2, axis = 1 ) #linalg.norm(signalMatrix - signals, axis = 1)
         return pComb[np.argmin(n)]
     return findBestMatchLocal
@@ -609,17 +643,29 @@ else:
     t2 = np.zeros(outShape)
     b1 = np.zeros(outShape)
     if ffMapDir:
-        ff, ffInfo = load3dDicom(ffMapDir)
+        if useBIDS:
+            ffMapFile = FFConverter.find(ffMapDir)
+            if not ffMapFile:
+                print('Cannot find FF map')
+                sys.exit(-1)
+            ff_med_volume = load_bids(ffMapFile[0])
+            ff = ff_med_volume.volume
+        else:
+            ff, ffInfo = load3dDicom(ffMapDir)
         
         # registration of the ff dataset
         if not regFF and ff.shape != dicomStack[:,:,:,0].squeeze().shape:
             print("Fat Fraction and T2 datasets have different shapes. Registration forced")
             regFF = True
         if regFF:
-            from registerDatasets import calcTransform2DStack
-            print("Registering the FF dataset")
-            transf = calcTransform2DStack(dicomStack[:,:,:,0], infoOut, ff, ffInfo)
-            ff = transf(ff)
+            if useBIDS:
+                ff_aligned = muscle_bids.utils.image.realign_medical_volume(ff_med_volume, med_volume)
+                ff = ff_aligned.volume
+            else:
+                from registerDatasets import calcTransform2DStack
+                print("Registering the FF dataset")
+                transf = calcTransform2DStack(dicomStack[:,:,:,0], infoOut, ff, ffInfo)
+                ff = transf(ff)
 
         ff[ff<0] = 0
         ff[ff>2**15] = 0 # sometimes there is a problem with saving signed/unsigned ff values
@@ -679,7 +725,25 @@ else:
 
 print("Elapsed time", time.time() - t)
 
-save3dDicom(t2*10, infoOut, os.path.join(baseDir, 't2' + outSuffix), 97)
-save3dDicom(b1*100, infoOut, os.path.join(baseDir, 'b1' + outSuffix), 98)
-save3dDicom(ff*100, infoOut, os.path.join(baseDir, 'ff' + outSuffix), 99)
-    
+if useBIDS:
+    single_echo_volume = muscle_bids.utils.reduce(med_volume, 0) # get a single echo volume from the original multi echo
+    t2_med_volume = T2Converter.convert_dataset(muscle_bids.utils.replace_volume(single_echo_volume, t2))
+    b1_med_volume = B1Converter.convert_dataset(muscle_bids.utils.replace_volume(single_echo_volume, b1))
+    ff_med_volume = FFConverter.convert_dataset(muscle_bids.utils.replace_volume(single_echo_volume, ff))
+    patient_base_name = os.path.basename(baseDir)
+
+    def save_dataset(dataset, converter):
+        save_bids(os.path.join(baseDir,
+                               converter.get_directory(),
+                               converter.get_file_name(patient_base_name) + '.nii.gz' ),
+                  dataset)
+
+    save_dataset(t2_med_volume, T2Converter)
+    save_dataset(b1_med_volume, B1Converter)
+    save_dataset(ff_med_volume, FFConverter)
+
+else:
+    save3dDicom(t2*10, infoOut, os.path.join(baseDir, 't2' + outSuffix), 97)
+    save3dDicom(b1*100, infoOut, os.path.join(baseDir, 'b1' + outSuffix), 98)
+    save3dDicom(ff*100, infoOut, os.path.join(baseDir, 'ff' + outSuffix), 99)
+
